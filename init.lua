@@ -149,6 +149,14 @@ vim.api.nvim_create_autocmd('TermOpen', {
   callback = function() vim.cmd.startinsert() end,
 })
 
+vim.api.nvim_create_autocmd('BufWinEnter', {
+  pattern = '*/doc/*.txt',
+  callback = function()
+    if vim.fn.winnr '$' > 1 then vim.cmd 'wincmd T' end
+    vim.keymap.set('n', 'q', ':tabc<CR>', { buffer = true, silent = true })
+  end,
+})
+
 -- TIP: Disable arrow keys in normal mode
 -- vim.keymap.set('n', '<left>', '<cmd>echo "Use h to move!!"<CR>')
 -- vim.keymap.set('n', '<right>', '<cmd>echo "Use l to move!!"<CR>')
@@ -264,6 +272,7 @@ require('lazy').setup({
       spec = {
         { '<leader>s', group = '[S]earch', mode = { 'n', 'v' } },
         { '<leader>t', group = '[T]oggle' },
+        { '<leader>g', group = '[G]it' },
         { '<leader>h', group = 'Git [H]unk', mode = { 'n', 'v' } },
       },
     },
@@ -303,7 +312,7 @@ require('lazy').setup({
         cond = function() return vim.fn.executable 'make' == 1 end,
       },
       { 'nvim-telescope/telescope-ui-select.nvim' },
-
+      { 'nvim-telescope/telescope-live-grep-args.nvim' },
       -- Useful for getting pretty icons, but requires a Nerd Font.
       { 'nvim-tree/nvim-web-devicons', enabled = vim.g.have_nerd_font },
     },
@@ -329,7 +338,10 @@ require('lazy').setup({
 
       -- [[ Configure Telescope ]]
       -- See `:help telescope` and `:help telescope.setup()`
-      require('telescope').setup {
+      local telescope = require 'telescope'
+      local lga_actions = require 'telescope-live-grep-args.actions'
+
+      telescope.setup {
         -- You can put your default mappings / updates / etc. in here
         --  All the info you're looking for is in `:help telescope.setup()`
         --
@@ -339,8 +351,23 @@ require('lazy').setup({
         --   },
         -- },
         -- pickers = {}
+        defaults = {
+          path_display = { 'filename_first' },
+        },
         extensions = {
           ['ui-select'] = { require('telescope.themes').get_dropdown() },
+          live_grep_args = {
+            auto_quoting = true, -- enable/disable auto-quoting
+            -- define mappings, e.g.
+            mappings = { -- extend mappings
+              i = {
+                ['<C-t>'] = lga_actions.quote_prompt(),
+                ['<C-i>'] = lga_actions.quote_prompt { postfix = ' --iglob **/*.*' },
+                -- freeze the current list and start a fuzzy search in the frozen list
+                ['<C-space>'] = lga_actions.to_fuzzy_refine,
+              },
+            },
+          },
         },
         pickers = {
           colorscheme = {
@@ -352,6 +379,7 @@ require('lazy').setup({
       -- Enable Telescope extensions if they are installed
       pcall(require('telescope').load_extension, 'fzf')
       pcall(require('telescope').load_extension, 'ui-select')
+      pcall(require('telescope').load_extension, 'live_grep_args')
 
       -- See `:help telescope.builtin`
       local builtin = require 'telescope.builtin'
@@ -360,12 +388,19 @@ require('lazy').setup({
       vim.keymap.set('n', '<leader>sf', builtin.find_files, { desc = '[S]earch [F]iles' })
       vim.keymap.set('n', '<leader>ss', builtin.builtin, { desc = '[S]earch [S]elect Telescope' })
       vim.keymap.set({ 'n', 'v' }, '<leader>sw', builtin.grep_string, { desc = '[S]earch current [W]ord' })
-      vim.keymap.set('n', '<leader>sg', builtin.live_grep, { desc = '[S]earch by [G]rep' })
+      vim.keymap.set('n', '<leader>sg', require('telescope').extensions.live_grep_args.live_grep_args, { desc = '[S]earch by [G]rep' })
       vim.keymap.set('n', '<leader>sd', builtin.diagnostics, { desc = '[S]earch [D]iagnostics' })
       vim.keymap.set('n', '<leader>sr', builtin.resume, { desc = '[S]earch [R]esume' })
       vim.keymap.set('n', '<leader>s.', builtin.oldfiles, { desc = '[S]earch Recent Files ("." for repeat)' })
       vim.keymap.set('n', '<leader>sc', builtin.commands, { desc = '[S]earch [C]ommands' })
       vim.keymap.set('n', '<leader><leader>', builtin.buffers, { desc = '[ ] Find existing buffers' })
+
+      -- Git pickers
+      vim.keymap.set('n', '<leader>gs', builtin.git_status, { desc = '[G]it [S]tatus' })
+      vim.keymap.set('n', '<leader>gc', builtin.git_commits, { desc = '[G]it [C]ommits' })
+      vim.keymap.set('n', '<leader>gb', builtin.git_bcommits, { desc = '[G]it [B]uffer commits' })
+      vim.keymap.set('n', '<leader>gB', builtin.git_branches, { desc = '[G]it [B]ranches' })
+      vim.keymap.set('n', '<leader>gt', builtin.git_stash, { desc = '[G]it s[T]ash' })
 
       -- This runs on LSP attach per buffer (see main LSP attach function in 'neovim/nvim-lspconfig' config for more info,
       -- it is better explained there). This allows easily switching between pickers if you prefer using something else!
@@ -375,7 +410,11 @@ require('lazy').setup({
           local buf = event.buf
 
           -- Find references for the word under your cursor.
-          vim.keymap.set('n', 'grr', builtin.lsp_references, { buffer = buf, desc = '[G]oto [R]eferences' })
+          -- Skip for scss/css — custom grr is defined for those filetypes
+          local ft = vim.bo[buf].filetype
+          if ft ~= 'scss' and ft ~= 'css' then
+            vim.keymap.set('n', 'grr', builtin.lsp_references, { buffer = buf, desc = '[G]oto [R]eferences' })
+          end
 
           -- Jump to the implementation of the word under your cursor.
           -- Useful when your language has ways of declaring types without an actual implementation.
@@ -573,7 +612,11 @@ require('lazy').setup({
       vim.list_extend(ensure_installed, {
         'lua-language-server', -- Lua Language server
         'stylua', -- Used to format Lua code
-        -- You can add other tools here that you want Mason to install
+        'prettierd', -- Prettier daemon for formatting
+        'oxlint', -- Fast Rust-based linter
+        'eslint-lsp', -- ESLint language server
+        'cssmodules-language-server', -- CSS Modules go-to-definition
+        'css-lsp', -- CSS/SCSS language server
       })
 
       require('mason-tool-installer').setup { ensure_installed = ensure_installed }
@@ -610,6 +653,19 @@ require('lazy').setup({
         },
       })
       vim.lsp.enable 'lua_ls'
+      vim.lsp.enable 'eslint'
+
+      -- CSS Modules: go-to-definition from styles.xxx in TSX to the SCSS class
+      vim.lsp.config('cssmodules_ls', {
+        filetypes = { 'javascript', 'javascriptreact', 'typescript', 'typescriptreact' },
+      })
+      vim.lsp.enable 'cssmodules_ls'
+
+      -- CSS/SCSS language server for completions, diagnostics, etc. in SCSS files
+      vim.lsp.config('cssls', {
+        filetypes = { 'css', 'scss', 'less' },
+      })
+      vim.lsp.enable 'cssls'
     end,
   },
 
@@ -648,6 +704,13 @@ require('lazy').setup({
         --
         -- You can use 'stop_after_first' to run the first available formatter from the list
         -- javascript = { "prettierd", "prettier", stop_after_first = true },
+        javascript = { 'prettierd' },
+        javascriptreact = { 'prettierd' },
+        typescript = { 'prettierd' },
+        typescriptreact = { 'prettierd' },
+        css = { 'prettierd' },
+        scss = { 'prettierd' },
+        json = { 'prettierd' },
       },
     },
   },
@@ -764,6 +827,10 @@ require('lazy').setup({
           hl.LineNrAbove = { fg = '#596391' }
           hl.LineNrBelow = { fg = '#596391' }
           -- hl.LineNr = { fg = '#596391' }
+          hl.TelescopePreviewLine = { link = 'IncSearch' }
+          hl.TelescopePreviewMatch = { link = 'IncSearch' }
+          hl.Keyword = { fg = '#bb9af7' }
+          hl['@keyword'] = { fg = '#bb9af7' }
         end,
       }
 
@@ -836,10 +903,23 @@ require('lazy').setup({
   --
   -- require 'kickstart.plugins.debug',
   -- require 'kickstart.plugins.indent_line',
-  -- require 'kickstart.plugins.lint',
+  require 'kickstart.plugins.lint',
   -- require 'kickstart.plugins.autopairs',
   require 'kickstart.plugins.neo-tree',
-  -- require 'kickstart.plugins.gitsigns', -- adds gitsigns recommend keymaps
+
+  {
+    'dmmulroy/ts-error-translator.nvim',
+    opts = {},
+  },
+
+  {
+    'pmizio/typescript-tools.nvim',
+    dependencies = { 'nvim-lua/plenary.nvim', 'neovim/nvim-lspconfig' },
+    opts = {},
+  },
+  { 'github/copilot.vim' },
+
+  require 'kickstart.plugins.gitsigns', -- adds gitsigns recommend keymaps
 
   -- NOTE: The import below can automatically add your own plugins, configuration, etc from `lua/custom/plugins/*.lua`
   --    This is the easiest way to modularize your config.
@@ -871,6 +951,31 @@ require('lazy').setup({
       lazy = '💤 ',
     },
   },
+})
+
+-- Find usages of a CSS/SCSS class in files that import the current stylesheet
+vim.api.nvim_create_autocmd('FileType', {
+  pattern = { 'scss', 'css' },
+  callback = function(event)
+    vim.keymap.set('n', 'grr', function()
+      local class = vim.fn.expand '<cword>'
+      if class == '' then return end
+      local scss_filename = vim.fn.expand '%:t'
+      local cmd = string.format("rg -l '%s' | xargs rg -nH '\\.%s\\b'", scss_filename, class)
+      local results = vim.fn.systemlist(cmd)
+      if #results == 0 then
+        vim.notify('No usages found for .' .. class, vim.log.levels.INFO)
+        return
+      end
+      local items = {}
+      for _, line in ipairs(results) do
+        local file, lnum, text = line:match '^(.+):(%d+):(.*)$'
+        if file then table.insert(items, { filename = file, lnum = tonumber(lnum), col = 1, text = text }) end
+      end
+      vim.fn.setqflist({}, ' ', { title = '.' .. class .. ' usages', items = items })
+      require('telescope.builtin').quickfix()
+    end, { buffer = event.buf, desc = 'Find CSS class usages in importers' })
+  end,
 })
 
 -- The line beneath this is called `modeline`. See `:help modeline`

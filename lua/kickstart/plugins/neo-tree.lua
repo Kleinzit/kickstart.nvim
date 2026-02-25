@@ -46,7 +46,6 @@ return {
     })
     vim.cmd [[cabbrev bd bprevious <bar> bdelete #]]
   end,
-
   opts = {
     filesystem = {
       window = {
