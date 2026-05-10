@@ -699,18 +699,10 @@ require('lazy').setup({
       end,
       formatters_by_ft = {
         lua = { 'stylua' },
-        -- Conform can also run multiple formatters sequentially
-        -- python = { "isort", "black" },
-        --
-        -- You can use 'stop_after_first' to run the first available formatter from the list
-        -- javascript = { "prettierd", "prettier", stop_after_first = true },
-        javascript = { 'prettierd' },
-        javascriptreact = { 'prettierd' },
-        typescript = { 'prettierd' },
-        typescriptreact = { 'prettierd' },
-        css = { 'prettierd' },
-        scss = { 'prettierd' },
-        json = { 'prettierd' },
+        typescript = { 'oxfmt' },
+        typescriptreact = { 'oxfmt' },
+        javascript = { 'oxfmt' },
+        javascriptreact = { 'oxfmt' },
       },
     },
   },
@@ -920,6 +912,19 @@ require('lazy').setup({
   { 'github/copilot.vim' },
 
   require 'kickstart.plugins.gitsigns', -- adds gitsigns recommend keymaps
+
+  { -- Side-by-side diffs with a file panel (like git status)
+    'sindrets/diffview.nvim',
+    dependencies = { 'nvim-lua/plenary.nvim' },
+    cmd = { 'DiffviewOpen', 'DiffviewClose', 'DiffviewFileHistory', 'DiffviewToggleFiles', 'DiffviewRefresh' },
+    keys = {
+      { '<leader>gd', '<cmd>DiffviewOpen<cr>', desc = '[G]it [D]iff (working tree)' },
+      { '<leader>gh', '<cmd>DiffviewFileHistory<cr>', desc = '[G]it [H]istory (repo)' },
+      { '<leader>gf', '<cmd>DiffviewFileHistory %<cr>', desc = '[G]it history of [F]ile' },
+      { '<leader>gq', '<cmd>DiffviewClose<cr>', desc = '[G]it diff [Q]uit' },
+    },
+    opts = {},
+  },
 
   -- NOTE: The import below can automatically add your own plugins, configuration, etc from `lua/custom/plugins/*.lua`
   --    This is the easiest way to modularize your config.
